@@ -4,6 +4,12 @@
 
 import numpy as np # linear algebra
 import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
 
 # Input data files are available in the "../input/" directory.
 # For example, running this (by clicking run or pressing Shift+Enter) will list the files in the input directory
@@ -21,35 +27,65 @@ os.chdir(current_dir)
 dataset = pd.read_csv('train.csv')
 dataset_test = pd.read_csv('test.csv')
 
-X_index = list(range(2, 3)) + list(range(4, 8)) + list(range(9, 10)) + list(range(11, 12))
-X = dataset.iloc[:, X_index].values
-y = dataset.iloc[:, 1].values
+
+# we will train our classifier with the following features
+# Numeric Features:
+# - age
+# - fare
+# - sibSp, sibilings and spounds
+# - prach, parents and children number
+# Categorical Features:
+# - pclass, ordinary integer (1, 2, 3)
+# - sex, categories encoded as strings {female, male}
+# - embarked, categories encoded as strings {S, C, Q}
+
 
 # preprocessing
 
-# nan
+# we create the preprocessing pipeline for both numeric and categorical data
+numeric_features = ['Age', 'SibSp', 'Parch', 'Fare']
+numeric_transforms = Pipeline(steps=[
+    ('imputer', SimpleImputer(strategy='median')),
+    ('scaler', StandardScaler())
+])
 
-# label
-from sklearn.preprocessing import LabelEncoder, OneHotEncoder
+categorical_features = ['Pclass', 'Sex', 'Embarked']
+categorical_transforms = Pipeline(steps=[
+    ('impute', SimpleImputer(strategy='constant', fill_value='missing')),
+    ('scaler', OneHotEncoder(handle_unknown='ignore'))
+])
 
-# gender
-label_encoder_X = LabelEncoder()
-X[:, 1] = label_encoder_X.fit_transform(X[:, 1])
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('num', numeric_transforms, numeric_features),
+        ('cat', categorical_transforms, categorical_features)
+    ]
+)
 
-# age 2
-# median
-col_mean = np.nanmean(X.astype(float), axis=0)
-nan_index = np.where(np.isnan(X.astype(float)))
-X[nan_index] = np.take(col_mean, nan_index[1])
+# Append classifier to preprocessing pipeline
+# Now we have a full prediction pipeline
 
-# embark 6
+clf = Pipeline(steps=[
+    ('preprocessor', preprocessor),
+('classifier', LogisticRegression(solver='lbfgs'))
+])
 
-label_encoder_X_6 = LabelEncoder()
-X[:, 6] = label_encoder_X_6.fit_transform(X[:, 6].astype(str))
 
-# pclass 0 one hot
+X = dataset.drop(labels=['PassengerId', 'Survived', 'Name', 'Ticket', 'Cabin'], axis=1)
+y = dataset['Survived']
 
-one_hot_encoder = OneHotEncoder(categorical_features=[0, 6])
-X = one_hot_encoder.fit_transform(X)
+X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=0)
 
+clf.fit(X_train, y_train)
+
+print('model score %.3f' % clf.score(X_test, y_test))
+
+y_pred = clf.predict(dataset_test)
+
+submission = pd.DataFrame({
+    "PassengerId": dataset_test['PassengerId'],
+    "Survived": y_pred
+})
+
+submission.to_csv('submission.csv', index=False)
 
