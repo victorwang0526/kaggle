@@ -55,6 +55,7 @@ classifier = Pipeline(steps=[
     ('classifier', RandomForestClassifier(n_estimators=10, criterion='entropy', random_state=0))
 ])
 
+# remove unuseful columns
 drop_labels = ['Id']
 X = train_dataset.drop(labels=drop_labels, axis=1)
 y = train_dataset['SalePrice']
