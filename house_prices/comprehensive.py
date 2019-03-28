@@ -1,6 +1,12 @@
 
 #invite people for the Kaggle party
 import pandas as pd
+
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.ensemble import RandomForestClassifier
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
@@ -13,6 +19,7 @@ from set_current_dir import set_current_dir
 
 set_current_dir('house_prices')
 df_train = pd.read_csv('train.csv')
+test_dataset = pd.read_csv('test.csv')
 
 print(df_train['SalePrice'].describe())
 
@@ -142,3 +149,80 @@ sns.distplot(df_train['TotalBsmtSF'], fit=norm)
 fig = plt.figure()
 res = stats.probplot(df_train['TotalBsmtSF'], plot=plt)
 plt.show()
+
+#create column for new variable (one is enough because it's a binary categorical feature)
+#if area>0 it gets 1, for area==0 it gets 0
+df_train['HasBsmt'] = pd.Series(len(df_train['TotalBsmtSF']), index=df_train.index)
+df_train['HasBsmt'] = 0
+df_train.loc[df_train['TotalBsmtSF']>0,'HasBsmt'] = 1
+#transform data
+df_train.loc[df_train['HasBsmt']==1,'TotalBsmtSF'] = np.log(df_train['TotalBsmtSF'])
+#histogram and normal probability plot
+sns.distplot(df_train[df_train['TotalBsmtSF']>0]['TotalBsmtSF'], fit=norm);
+fig = plt.figure()
+res = stats.probplot(df_train[df_train['TotalBsmtSF']>0]['TotalBsmtSF'], plot=plt)
+plt.show()
+
+#scatter plot
+plt.scatter(df_train['GrLivArea'], df_train['SalePrice'])
+plt.show()
+
+plt.scatter(df_train[df_train['TotalBsmtSF']>0]['TotalBsmtSF'], df_train[df_train['TotalBsmtSF']>0]['SalePrice'])
+plt.show()
+
+#convert categorical variable into dummy
+# df_train = pd.get_dummies(df_train)
+
+numeric_features = [f for f in df_train.columns if df_train.dtypes[f] != 'object']
+numeric_features.remove('SalePrice')
+numeric_features.remove('Id')
+categorical_features = [f for f in df_train.columns if df_train.dtypes[f] == 'object']
+
+
+numeric_transforms = Pipeline(steps=[
+    ('imputer', SimpleImputer(strategy='median')),
+    ('scaler', StandardScaler())
+])
+
+categorical_transforms = Pipeline(steps=[
+    ('imputer', SimpleImputer(strategy='constant', fill_value='missing')),
+    ('scaler', OneHotEncoder(handle_unknown='ignore'))
+])
+
+preprocessor = ColumnTransformer(transformers=[
+    ('num', numeric_transforms, numeric_features),
+    ('cat', categorical_transforms, categorical_features)
+])
+
+# append classifier to preprocessor
+
+classifier = Pipeline(steps=[
+    ('preprocessor', preprocessor),
+    ('classifier', RandomForestClassifier(n_estimators=10, criterion='entropy', random_state=0))
+])
+
+# remove unuseful columns
+drop_labels = ['Id']
+X = df_train.drop(labels=drop_labels, axis=1)
+y = df_train['SalePrice']
+
+# # fit local
+# X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=0)
+#
+# classifier.fit(X_train, y_train)
+#
+# y_pred = classifier.predict(X_test)
+
+# fit all train dataset
+classifier.fit(X, y)
+
+X_test = test_dataset.drop(labels=drop_labels, axis=1)
+
+y_pred = classifier.predict(X_test)
+
+submission = pd.DataFrame({
+    'Id': test_dataset['Id'],
+    'SalePrice': y_pred
+})
+
+submission.to_csv('submission.csv', index=False)
